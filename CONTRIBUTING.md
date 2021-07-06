@@ -49,14 +49,17 @@ After your PR is ready to commit, please run following commands to check your co
   ```shell
   make verify
   ```
+
 - run the unit test
   ```shell
   make test
   ```
+
 - run the integration test
   ```shell
   make test-integration
   ```
+
 - run the end-to-end test, prepare a kind cluster and run the following command
   ```shell
   export KUBECONFIG={the kubeconfig of your kind cluster that will run the e2e test}
