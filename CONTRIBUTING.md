@@ -45,22 +45,22 @@ Repo maintainers can assign you an issue or pull request by leaving a
 
 After your PR is ready to commit, please run following commands to check your code.
 
-- verify your code 
+- Verify your code 
   ```shell
   make verify
   ```
 
-- run the unit test
+- Run the unit test
   ```shell
   make test
   ```
 
-- run the integration test
+- Run the integration test
   ```shell
   make test-integration
   ```
 
-- run the end-to-end test, prepare a kind cluster and run the following command
+- Run the end-to-end test, prepare a kind cluster and run the following command
   ```shell
   export KUBECONFIG={the kubeconfig of your kind cluster that will run the e2e test}
 
