@@ -73,6 +73,22 @@ func (c *leaseController) sync(ctx context.Context, syncCtx factory.SyncContext)
 		observedLease, err := c.leaseLister.Leases(cluster.Name).Get(leaseName)
 		switch {
 		case errors.IsNotFound(err):
+			// the managed cluster is deleting, but its lease is deleted accidently
+			// we will not try to create the lease again, just set the cluster status to unknow
+			if !cluster.DeletionTimestamp.IsZero() {
+				conditionUpdateFn := helpers.UpdateManagedClusterConditionFn(metav1.Condition{
+					Type:    clusterv1.ManagedClusterConditionAvailable,
+					Status:  metav1.ConditionUnknown,
+					Reason:  "ManagedClusterLeaseNotFound",
+					Message: fmt.Sprintf("Managed cluster lease is not found."),
+				})
+				_, _, err := helpers.UpdateManagedClusterStatus(ctx, c.clusterClient, cluster.Name, conditionUpdateFn)
+				if err != nil {
+					return err
+				}
+				continue
+			}
+
 			lease := &coordv1.Lease{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      leaseName,
