@@ -2,7 +2,10 @@ module github.com/open-cluster-management/registration
 
 go 1.14
 
-replace github.com/googleapis/gnostic => github.com/googleapis/gnostic v0.4.1 // ensure compatible between controller-runtime and kube-openapi
+replace (
+	github.com/googleapis/gnostic => github.com/googleapis/gnostic v0.4.1 // ensure compatible between controller-runtime and kube-openapi
+	github.com/open-cluster-management/api => open-cluster-management.io/api v0.0.0-20201126023000-353dd8370f4d
+)
 
 require (
 	github.com/go-bindata/go-bindata v3.1.2+incompatible
