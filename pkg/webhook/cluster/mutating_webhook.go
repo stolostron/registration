@@ -7,23 +7,20 @@ import (
 	"strings"
 	"time"
 
-	clusterv1 "open-cluster-management.io/api/cluster/v1"
-	"open-cluster-management.io/registration/pkg/helpers"
-
+	"github.com/mattbaird/jsonpatch"
+	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
 	admissionv1beta1 "k8s.io/api/admission/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
+	clusterv1 "open-cluster-management.io/api/cluster/v1"
+	"open-cluster-management.io/registration/pkg/features"
+	"open-cluster-management.io/registration/pkg/helpers"
 )
 
 var nowFunc = time.Now
-
-type jsonPatchOperation struct {
-	Operation string      `json:"op"`
-	Path      string      `json:"path"`
-	Value     interface{} `json:"value,omitempty"`
-}
+var defaultClusterSetName = "default"
 
 // ManagedClusterMutatingAdmissionHook will mutate the creating/updating managedcluster request.
 type ManagedClusterMutatingAdmissionHook struct{}
@@ -68,7 +65,7 @@ func (a *ManagedClusterMutatingAdmissionHook) Admit(req *admissionv1beta1.Admiss
 		return status
 	}
 
-	var jsonPatches []jsonPatchOperation
+	var jsonPatches []jsonpatch.JsonPatchOperation
 
 	// set timeAdded of taint if it is nil and reset it if it is modified
 	taintJsonPatches, status := a.processTaints(managedCluster, req.OldObject.Raw)
@@ -76,6 +73,14 @@ func (a *ManagedClusterMutatingAdmissionHook) Admit(req *admissionv1beta1.Admiss
 		return status
 	}
 	jsonPatches = append(jsonPatches, taintJsonPatches...)
+
+	if features.DefaultHubMutableFeatureGate.Enabled(features.DefaultClusterSet) {
+		labelJsonPatches, status := a.addDefaultClusterSetLabel(managedCluster, req.Object.Raw)
+		if !status.Allowed {
+			return status
+		}
+		jsonPatches = append(jsonPatches, labelJsonPatches...)
+	}
 
 	if len(jsonPatches) == 0 {
 		return status
@@ -97,8 +102,40 @@ func (a *ManagedClusterMutatingAdmissionHook) Admit(req *admissionv1beta1.Admiss
 	return status
 }
 
+//addDefaultClusterSetLabel add label "cluster.open-cluster-management.io/clusterset:default" for ManagedCluster if the managedCluster has no ManagedClusterSet label
+func (a *ManagedClusterMutatingAdmissionHook) addDefaultClusterSetLabel(managedCluster *clusterv1.ManagedCluster, clusterObj []byte) ([]jsonpatch.JsonPatchOperation, *admissionv1beta1.AdmissionResponse) {
+	cluster := managedCluster.DeepCopy()
+	modified := false
+	var jsonPatches []jsonpatch.JsonPatchOperation
+
+	status := &admissionv1beta1.AdmissionResponse{
+		Allowed: true,
+	}
+
+	if len(managedCluster.Labels) != 0 {
+		if _, ok := managedCluster.Labels[clusterSetLabel]; ok {
+			return nil, status
+		}
+	}
+
+	clusterSetLabels := map[string]string{}
+	clusterSetLabels[clusterSetLabel] = defaultClusterSetName
+	// merge clusterSetLabel into ManagedCluster.Labels
+	resourcemerge.MergeMap(&modified, &cluster.Labels, clusterSetLabels)
+
+	// no work if the cluster labels have no change
+	if !modified {
+		return nil, status
+	}
+
+	labelPatch := newLabelJsonPatch()
+
+	jsonPatches = append(jsonPatches, labelPatch)
+	return jsonPatches, status
+}
+
 // processTaints generates json patched for cluster taints
-func (a *ManagedClusterMutatingAdmissionHook) processTaints(managedCluster *clusterv1.ManagedCluster, oldManagedClusterRaw []byte) ([]jsonPatchOperation, *admissionv1beta1.AdmissionResponse) {
+func (a *ManagedClusterMutatingAdmissionHook) processTaints(managedCluster *clusterv1.ManagedCluster, oldManagedClusterRaw []byte) ([]jsonpatch.JsonPatchOperation, *admissionv1beta1.AdmissionResponse) {
 	status := &admissionv1beta1.AdmissionResponse{
 		Allowed: true,
 	}
@@ -122,7 +159,7 @@ func (a *ManagedClusterMutatingAdmissionHook) processTaints(managedCluster *clus
 	}
 
 	var invalidTaints []string
-	var jsonPatches []jsonPatchOperation
+	var jsonPatches []jsonpatch.JsonPatchOperation
 	now := metav1.NewTime(nowFunc())
 	for index, taint := range managedCluster.Spec.Taints {
 		originalTaint := helpers.FindTaintByKey(oldManagedCluster, taint.Key)
@@ -167,10 +204,18 @@ func (a *ManagedClusterMutatingAdmissionHook) Initialize(kubeClientConfig *rest.
 	return nil
 }
 
-func newTaintTimeAddedJsonPatch(index int, timeAdded time.Time) jsonPatchOperation {
-	return jsonPatchOperation{
+func newTaintTimeAddedJsonPatch(index int, timeAdded time.Time) jsonpatch.JsonPatchOperation {
+	return jsonpatch.JsonPatchOperation{
 		Operation: "replace",
 		Path:      fmt.Sprintf("/spec/taints/%d/timeAdded", index),
 		Value:     timeAdded.UTC().Format(time.RFC3339),
+	}
+}
+
+func newLabelJsonPatch() jsonpatch.JsonPatchOperation {
+	return jsonpatch.JsonPatchOperation{
+		Operation: "add",
+		Path:      fmt.Sprintf("/metadata/labels"),
+		Value:     map[string]string{clusterSetLabel: defaultClusterSetName},
 	}
 }

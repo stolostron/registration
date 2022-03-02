@@ -3,6 +3,7 @@ module open-cluster-management.io/registration
 go 1.17
 
 require (
+	github.com/mattbaird/jsonpatch v0.0.0-20200820163806-098863c1fc24
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.17.0
 	github.com/openshift/api v0.0.0-20211209135129-c58d9f695577
