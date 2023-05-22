@@ -44,7 +44,7 @@ Contains controllers that support:
 export IMAGE_NAME=<your_own_image_name> # export IMAGE_NAME=quay.io/open-cluster-management/registration:latest
 ```
 
-3. Deploy the hub control plane and the registration agent:
+3. Deploy the hub control plane and the registration agent
   ```
   make deploy
   ```
