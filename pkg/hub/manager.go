@@ -4,6 +4,7 @@ import (
 	"context"
 	certv1 "k8s.io/api/certificates/v1"
 	certv1beta1 "k8s.io/api/certificates/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"time"
 
 	ocmfeature "open-cluster-management.io/api/feature"
@@ -154,11 +155,22 @@ func (m *HubManagerOptions) RunControllerManager(ctx context.Context, controller
 		controllerContext.EventRecorder,
 	)
 
+	rbacFinalizerKubeInfomers := kubeinformers.NewSharedInformerFactoryWithOptions(kubeClient, 10*time.Minute, kubeinformers.WithTweakListOptions(
+		func(listOptions *metav1.ListOptions) {
+			selector := &metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{
+						Key:      "open-cluster-management.io/cluster-name",
+						Operator: metav1.LabelSelectorOpExists,
+					},
+				},
+			}
+			listOptions.LabelSelector = metav1.FormatLabelSelector(selector)
+		}))
 	rbacFinalizerController := rbacfinalizerdeletion.NewFinalizeController(
-		kubeInfomers.Rbac().V1().Roles(),
-		kubeInfomers.Rbac().V1().RoleBindings(),
-		kubeInfomers.Core().V1().Namespaces().Lister(),
-		clusterInformers.Cluster().V1().ManagedClusters().Lister(),
+		rbacFinalizerKubeInfomers.Rbac().V1().RoleBindings().Lister(),
+		rbacFinalizerKubeInfomers.Core().V1().Namespaces(),
+		clusterInformers.Cluster().V1().ManagedClusters(),
 		workInformers.Work().V1().ManifestWorks().Lister(),
 		kubeClient.RbacV1(),
 		controllerContext.EventRecorder,
@@ -217,6 +229,7 @@ func (m *HubManagerOptions) RunControllerManager(ctx context.Context, controller
 	go workInformers.Start(ctx.Done())
 	go kubeInfomers.Start(ctx.Done())
 	go addOnInformers.Start(ctx.Done())
+	go rbacFinalizerKubeInfomers.Start(ctx.Done())
 
 	go managedClusterController.Run(ctx, 1)
 	go taintController.Run(ctx, 1)
