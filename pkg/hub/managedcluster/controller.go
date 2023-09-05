@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	corev1 "k8s.io/api/core/v1"
 
 	clientset "open-cluster-management.io/api/client/cluster/clientset/versioned"
 	informerv1 "open-cluster-management.io/api/client/cluster/informers/externalversions/cluster/v1"
@@ -142,8 +143,21 @@ func (c *managedClusterController) sync(ctx context.Context, syncCtx factory.Syn
 
 	// TODO consider to add the managedcluster-namespace.yaml back to staticFiles,
 	// currently, we keep the namespace after the managed cluster is deleted.
-	applyFiles := []string{"manifests/managedcluster-namespace.yaml"}
-	applyFiles = append(applyFiles, staticFiles...)
+	// apply namespace at first
+	namespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: managedClusterName,
+			Labels: map[string]string{
+				"open-cluster-management.io/cluster-name": managedClusterName,
+			},
+		},
+	}
+
+	errs := []error{}
+	_, _, err = resourceapply.ApplyNamespace(ctx, c.kubeClient.CoreV1(), syncCtx.Recorder(), namespace)
+	if err != nil {
+		errs = append(errs, err)
+	}
 
 	// Hub cluster-admin accepts the spoke cluster, we apply
 	// 1. clusterrole and clusterrolebinding for this spoke cluster.
@@ -155,9 +169,9 @@ func (c *managedClusterController) sync(ctx context.Context, syncCtx factory.Syn
 		syncCtx.Recorder(),
 		c.cache,
 		helpers.ManagedClusterAssetFn(manifestFiles, managedClusterName),
-		applyFiles...,
+		staticFiles...,
 	)
-	errs := []error{}
+
 	for _, result := range resourceResults {
 		if result.Error != nil {
 			errs = append(errs, fmt.Errorf("%q (%T): %v", result.File, result.Type, result.Error))
